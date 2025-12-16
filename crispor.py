@@ -4414,8 +4414,8 @@ def printForm(params):
 <form id="main-form" method="post" action="%s">
 
  <div style="text-align:left; margin-left: 10px">
- CRISPOR (<a href="https://academic.oup.com/nar/article/46/W1/W242/4995687">citation</a>) is a program that helps design, evaluate and clone guide sequences for the CRISPR/Cas9 system. <a target=_blank href="/manual/">CRISPOR Manual</a>
-
+ CRISPOR (<a href="https://academic.oup.com/nar/article/46/W1/W242/4995687">citation</a>) is a program that helps design, evaluate and clone guide sequences for the CRISPR/Cas9 system. <a target=_blank href="/manual/">CRISPOR Manual</a><br>
+ Alternatively, use <a href="crispor.py?assist=1"> CRISPOR Assistant </a> to guide you through your experiment<br>
 <br><i>July 2025: Added hasCas12Max and e-SpotOn. Also allowing old primer links to Crispor to work again. See <a href="doc/changes.html">Full list of changes</a></i><br>
 
  </div>
@@ -7079,6 +7079,81 @@ def printLibGuides(params):
         print('</tr>')
     print('</table>')
 
+
+def printKoForm():
+
+    lastorg = DEFAULTORG
+    genomes = readGenomes()
+    scriptName = basename(__file__)
+
+    lastpam = DEFAULTPAM
+
+    print(
+    """
+    <form id="KoForm", method="get">
+        <input type=hidden name="assist" value="1">
+        <input type=hidden name="expType" value="ko">
+        <div class="windowstep subpanel" style="width:50%; position:fixed; top:100px; right:250px; width:1000px;">
+            <div class="title" style="cursor:pointer;" onclick="$('#helpstep3').toggle('fast')">
+                Step 1
+            </div>
+            <div class="substep" style="margin-bottom:20px;">     
+                Select a genome
+            """)
+
+    printOrgDropDown(lastorg, genomes)
+
+    print(
+    """
+                <div id="trackHubNote" style="margin-bottom:12px; margin-top:12px">
+                    <small>Note: pre-calculated exonic guides for this species are on the <a id='hgTracksLink' target=_blank href="">UCSC Genome Browser</a>.</small>
+                </div>
+            <small style="float:left">We have %d genomes, but not yours? Search <a href="https://www.ncbi.nlm.nih.gov/assembly">NCBI assembly</a> and send a GCF_/GCA_ ID to <a href="mailto:%s">CRISPOR support</a>.</small><br>
+            </div>
+        </div>
+    """ % (len(genomes), contactEmail))
+
+    # register ogn in params
+    print("""
+        <div class="windowstep subpanel" style="width:100%%; height:250px">
+            <div class="title" style="cursor:pointer;" onclick="$('#helpstep3').toggle('fast')">
+                Step 2
+            </div>
+            <div>
+            Enter a gene symbol and a Protospacer Adjacent Motif (PAM)
+            </div>
+            <div class="windowstep subpanel" style="width:40%%; height:158px">
+                <div style="margin-bottom:35px; margin-top:12px;">Enter the gene Symbol, Entrez Gene ID or Refseq ID of the gene you want to knock-out</div>
+                <input style="margin-bottom:35px; height:25px" type="text" name="ko_geneid" size="50" placeholder="Paste a gene symbol here"><br>
+                <small style="margin-bottom:20px;"><a href="javascript:clearInput()">Clear Box</a> - </small>
+                <small><a href="javascript:resetToExample()">Reset to default</a></small>
+            </div>
+            
+            <div class="windowstep subpanel" style="display:flex; flex-direction:column; width:40%%; height:158px; padding:px;">
+                <div style="margin-bottom:35px; margin-top:12px;">
+                    Select a Protospacer Adjacent Motif (PAM)
+                    <img src="%simage/info-small.png" title="The most common system uses the NGG PAM recognized by Cas9 from S. <i>pyogenes</i>. The VRER and VQR mutants were described by <a href='http://www.nature.com/nature/journal/vaop/ncurrent/abs/nature14592.html' target='_blank'>Kleinstiver et al</a>, Cas9-HF1 by <a href='https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4851738/'>Kleinstiver 2016</a>, eSpCas1.1 by <a href='https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4714946/'>Slaymaker 2016</a>, Cpf1 by <a href='http://www.cell.com/abstract/S0092-8674(15)01200-3'>Zetsche 2015</a>, SaCas9 by <a href='https://www.ncbi.nlm.nih.gov/pmc/articles/pmid/25830891/'>Ran 2015</a> and KKH-SaCas9 by <a href='https://www.ncbi.nlm.nih.gov/pmc/articles/pmid/26524662/'>Kleinstiver 2015</a>, modified As-Cpf1s by <a href='http://biorxiv.org/content/early/2016/12/04/091611'>Gao et al. 2017</a>." class="tooltipsterInteract">
+                    <br>
+                </div>
+                <div style="margin-bottom:15px;">
+
+    """ % HTMLPREFIX )
+
+    printPamDropDown(lastpam)
+
+    print("""
+                </div>
+                <div style="margin-bottom:15px;">
+                    <br>See <a target=_blank href="manual/manual.html#enzymes">notes on enzymes</a> in the manual.<br>
+                </div>
+            </div>
+        <div style="margin-top:80px; text-align:center;">
+            <input id="submitKoGeneID" type="submit" name="submit" value="Submit" style="height:50px; width:100px;">
+        </div>
+    </form>
+    """)
+
+
 def printBody(params):
     " main dispatcher function "
 
@@ -7118,6 +7193,143 @@ def printBody(params):
         printLibGuides(params)
     else:
         printForm(params)
+
+
+def assistantDispatcher(params):
+#Dispatcher function for Assistant mode
+
+    org = params.get("org")
+    ko_geneid = params.get("ko_geneid", None)
+    #pam = params.get("pam", None) useless ?
+
+    printTeforBodyStart()
+    printCrisporBodyStart()
+    printAssistant(params)
+    if params.get("expType") == "ko":
+        
+        printKoForm()
+
+        if ko_geneid is not None and org is not None: #and pam is not None?
+            
+            try:
+                params["seq"] = getGeneSeq(params, ko_geneid, org)
+
+            except ValueError as err:
+                error = str(err)
+                if error == "genome_err":
+                    print("<p>Sorry, this genome is missing annotation. Paste the sequence of the frist exon of your gene in the main menu instead.<br>Please provide a GCF_/GCA_ ID to <a href='mailto:%s'>CRISPOR support</a> if you want to add a new genome</p>") % contactEmail
+                if error == "gene_err":
+                    print("<p>Sorry, the Gene ID was not found in the annotation</p>") # this error always gets assigned even if no genePred file is available
+
+            if "seq" in params:
+                crisprSearch(params)
+            else:
+                pass
+
+
+            #for each genome, create a conversion table for gene Symbol, Entrez ID and RefSeq ID
+
+    elif params.get("expType") == "ki":
+        printKiForm(params)
+    else:
+        pass
+    printTeforBodyEnd()
+
+def getGeneSeq(params, geneID, org):
+    #Given a Gene ID, returns the sequence of an exon in the first third of the coding region (or part of it)
+    #Need to add the possibility for the user to select a specific exon (select by coordinate or by exon number ?
+
+    genomeDir = genomesDir
+    twoBitFname = getTwoBitFname(org)
+    #segFname = "%(genomeDir)s/%(org)s/%(org)s.segments.bed" % locals()
+    genomePath =  "%(genomeDir)s/%(org)s/" % locals()
+    genomeFiles = os.listdir(genomePath)
+    gpFile = next(f for f in genomeFiles if f.endswith(".gp")) #handle case when several .gp files are in the folder
+    
+    if gpFile:
+        
+        gpFilePath = os.path.join(genomePath, gpFile)
+        with open(file = gpFilePath, mode='r') as genePred:
+            genesLines = [line.strip() for line in genePred]
+        
+        exons=[]
+        #navigate though each transcript
+        #GenePred format :
+        # 0: gene name ; 1: chr ; 2: strand ; 3: TSS ; 4: TES ; 5: CDS start ; 6: CDS end ; 7: nb. exons ; 8: exons start ; 9: exons end
+        for geneLine in genesLines:
+            geneLine = geneLine.split('\t')
+            if geneID in geneLine:
+                chrom = geneLine[1]
+                #altName = geneLine[11]
+                exonNumber = int(geneLine[7])
+                exonStart = [exon for exon in geneLine[8].split(',') if exon != '']
+                exonEnd = [exon for exon in geneLine[9].split(',') if exon != '']
+                
+                for start, end in zip(exonStart, exonEnd):
+                        posSTR = "%(chrom)s:%(start)s-%(end)s" % locals()
+                        exons.append(posSTR)
+
+        #print(f' exon posSTR = {exons}')
+
+        exon_seqs = []
+        if exons:
+            for i, exon in enumerate(exons):
+
+                #are all the conditions mutually exclusive ?
+                exon_length = int(re.split(':|-', exon)[2]) - int(re.split(':|-', exon)[1]) 
+
+                if exon_length < MAXSEQLEN3 and (pamDesc in verySlowPams) and i < 0.33*exonNumber:
+                    sel_exon = exon
+                elif exon_length < MAXSEQLEN2 and (isSlowPam(pamDesc)) and i < 0.33*exonNumber:
+                    sel_exon = exon
+                elif exon_length < MAXSEQLEN and i < 0.33*exonNumber:
+                    sel_exon = exon
+                #If none of exons in the first third of the conding sequence are of adequate length, get the sequence of the first exon up until MAXSEQLEN
+                #Is this preferable compared to selecting whole exons ?
+                elif (pamDesc in verySlowPams) and i > 0.33*exonNumber:
+                    sel_exon = exons[0][0:MAXSEQLEN3]
+                elif (isSlowPam(pamDesc)) and i > 0.33*exonNumber:
+                    sel_exon = exons[0][0:MAXSEQLEN2]
+                elif i > 0.33*exonNumber:
+                    sel_exon = exons[0][0:MAXSEQLEN]
+                
+            if sel_exon: #Is it necessary ?
+                exon_seq = getSeq(params["org"], sel_exon) 
+                return exon_seq
+            else:
+                pass
+        else:
+            raise ValueError("gene_err")
+
+    else:
+        raise ValueError("genome_err")
+        
+
+    #load all possible transcripts in real time using AJAX with select2 (load url)
+
+    #example (from https://select2.org/data-sources/ajax)
+
+    """
+    html
+    <select class="js-data-example-ajax"></select>
+
+    JS
+    $('.js-data-example-ajax').select2({
+    ajax: {
+    url: 'https://api.github.com/search/repositories',
+    dataType: 'json'
+    // Additional AJAX parameters go here; see the end of this chapter for the full code of this example
+    }
+    });
+    
+    """
+
+
+    #alternative in bash ? 
+    #cmd = "awk id=$geneID '$4 ~ id' $ %(segFname)s %locals" ()
+    #run twoBitToFa 
+    #cmd = "bedtools getfasta -fi %(genome_file)s -bed %(segFname)s" %locals()
+
 
 def iterParseBoulder(tmpOutFname):
     " parse a boulder IO style file, as output by Primer3 "
@@ -8954,9 +9166,8 @@ def mainCgi():
         printHeader(batchId, title)
 
     if "assist" in params:
-        printTeforBodyStart()
-        printAssistant(params)
-        printTeforBodyEnd()
+        #moved printAssistant() to a dedicated function
+        assistantDispatcher(params)
         return
 
     printBody(params)     # main dispatcher, branches based on the params dictionary
