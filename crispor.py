@@ -7154,6 +7154,25 @@ def printKoForm():
     """)
 
 
+    #load all possible transcripts in real time using AJAX with select2 (load url)
+    #example (from https://select2.org/data-sources/ajax)
+
+    """
+    html
+    <select class="js-data-example-ajax"></select>
+
+    JS
+    $('.js-data-example-ajax').select2({
+    ajax: {
+    url: 'https://api.github.com/search/repositories',
+    dataType: 'json'
+    // Additional AJAX parameters go here; see the end of this chapter for the full code of this example
+    }
+    });
+    
+    """
+
+
 def printBody(params):
     " main dispatcher function "
 
@@ -7200,7 +7219,6 @@ def assistantDispatcher(params):
 
     org = params.get("org")
     ko_geneid = params.get("ko_geneid", None)
-    #pam = params.get("pam", None) useless ?
 
     printTeforBodyStart()
     printCrisporBodyStart()
@@ -7210,24 +7228,31 @@ def assistantDispatcher(params):
         printKoForm()
 
         if ko_geneid is not None and org is not None: #and pam is not None?
-            
+
             try:
-                params["seq"] = getGeneSeq(params, ko_geneid, org)
+                seqlist = getGeneSeq(params, ko_geneid, org)
+                if seqlist:
+                    #print(seqlist)
+                    #get the first exon of the first transcript in the first file, for now
+                    params["seq"] = seqlist[0][0][0]
+                else:
+                    pass
 
             except ValueError as err:
                 error = str(err)
                 if error == "genome_err":
-                    print("<p>Sorry, this genome is missing annotation. Paste the sequence of the frist exon of your gene in the main menu instead.<br>Please provide a GCF_/GCA_ ID to <a href='mailto:%s'>CRISPOR support</a> if you want to add a new genome</p>") % contactEmail
-                if error == "gene_err":
-                    print("<p>Sorry, the Gene ID was not found in the annotation</p>") # this error always gets assigned even if no genePred file is available
+                    print('<br><br><p>Sorry, this genome is missing an annotation file.<br> Paste the sequence of the frist exon of your gene in the main menu instead.<br>Please provide a GCF_/GCA_ ID to <a href="mailto:%s">CRISPOR support</a> if you want to add a new genome</p>' % contactEmail)
+                elif error == "gene_err":
+                    print("<p>Sorry, the Gene ID was not found in the annotation</p>")
 
             if "seq" in params:
+                pass
+                #searching in hg19 is too much to handle
                 crisprSearch(params)
             else:
                 pass
 
-
-            #for each genome, create a conversion table for gene Symbol, Entrez ID and RefSeq ID
+            #for each genome, create a conversion table for gene Symbol, Entrez ID and RefSeq ID (multiples .gp files is OK too)
 
     elif params.get("expType") == "ki":
         printKiForm(params)
@@ -7236,100 +7261,97 @@ def assistantDispatcher(params):
     printTeforBodyEnd()
 
 def getGeneSeq(params, geneID, org):
-    #Given a Gene ID, returns the sequence of an exon in the first third of the coding region (or part of it)
-    #Need to add the possibility for the user to select a specific exon (select by coordinate or by exon number ?
+    #Given a Gene ID, returns a list of transcripts. Each transcript is a dict containing the sequence of exons in the first third of the coding sequence.
+    #output is [file[transcript{n°exon:'seq_exon'}]]
+    #Need to add the possibility for the user to select an exon (select by coordinate or by exon number ?
 
     genomeDir = genomesDir
     twoBitFname = getTwoBitFname(org)
-    #segFname = "%(genomeDir)s/%(org)s/%(org)s.segments.bed" % locals()
     genomePath =  "%(genomeDir)s/%(org)s/" % locals()
     genomeFiles = os.listdir(genomePath)
-    gpFile = next(f for f in genomeFiles if f.endswith(".gp")) #handle case when several .gp files are in the folder
+    gpFiles = [f for f in genomeFiles if f.endswith(".gp")] 
     
-    if gpFile:
-        
-        gpFilePath = os.path.join(genomePath, gpFile)
-        with open(file = gpFilePath, mode='r') as genePred:
-            genesLines = [line.strip() for line in genePred]
-        
-        exons=[]
-        #navigate though each transcript
-        #GenePred format :
-        # 0: gene name ; 1: chr ; 2: strand ; 3: TSS ; 4: TES ; 5: CDS start ; 6: CDS end ; 7: nb. exons ; 8: exons start ; 9: exons end
-        for geneLine in genesLines:
-            geneLine = geneLine.split('\t')
-            if geneID in geneLine:
-                chrom = geneLine[1]
-                #altName = geneLine[11]
-                exonNumber = int(geneLine[7])
-                exonStart = [exon for exon in geneLine[8].split(',') if exon != '']
-                exonEnd = [exon for exon in geneLine[9].split(',') if exon != '']
-                
-                for start, end in zip(exonStart, exonEnd):
-                        posSTR = "%(chrom)s:%(start)s-%(end)s" % locals()
-                        exons.append(posSTR)
+    if gpFiles:
+        fileExonSeqs = []
+        for gpFile in gpFiles:
+            gpFilePath = os.path.join(genomePath, gpFile)
+            with open(file = gpFilePath, mode='r') as genePred:
+                genesLines = [line.strip() for line in genePred]
+            #problem : there is no way to differentiate transcripts in the genePred format.
+            #sometimes (as in hg19) 'transcripts' in genePred can represent different haplogroups ? -> need to return chrom name (in a tuple instead of dict ?)
+            #GenePred format : 0: gene name ; 1: chr ; 2: strand ; 3: TSS ; 4: TES ; 5: CDS start ; 6: CDS end ; 7: nb. exons ; 8: exons start ; 9: exons end.
+            transcriptExonSeqs = []
+            for geneLine in genesLines:
+                selExons = {}
+                geneLine = geneLine.split('\t')
 
-        #print(f' exon posSTR = {exons}')
+                if geneID in geneLine:
+                    chrom = geneLine[1]
+                    exonStarts = [int(exon) for exon in geneLine[8].split(',') if exon != '']
+                    exonEnds = [int(exon) for exon in geneLine[9].split(',') if exon != '']
+                    #cds_length = int(geneLine[6]) - int(geneLine[5]) why is cds length longer than the length of all exons summed ?
+                    #lengths of all exons in the current transcript
+                    cdsLen = sum([end - start for (start, end) in zip(exonStarts, exonEnds)])
 
-        exon_seqs = []
-        if exons:
-            for i, exon in enumerate(exons):
+                    exonLengths = []
 
-                #are all the conditions mutually exclusive ?
-                exon_length = int(re.split(':|-', exon)[2]) - int(re.split(':|-', exon)[1]) 
+                    for nb, (start, end) in enumerate(zip(exonStarts, exonEnds)):
+                        exonLen = end - start
+                        exonLengths.append(exonLen)
+                        currentLen = sum(exonLengths)       
+                        posStr = "%(chrom)s:%(start)s-%(end)s" % locals()
+                        posStrTrunc = "%(chrom)s:%(start)s-" % locals() 
+                        # check if the exon is in the first third of the coding sequence
+                        # store the exon if it is shorter than MAXSQLEN
+                        # store the first exon anyway
+                        # to add : the first 'discarded' exon could be truncated to fit in 0.33*cdsLen
+                        # better to create a function ? 
+                        third = int(0.33*cdsLen)
+                        if third < 23:
+                            third = 23                  
+                        IsIn = currentLen < third
+                        #SlowPamConds = {pamDesc in verySlowPams:MAXSEQLEN3, isSlowPam(pamDesc):MAXSEQLEN2, pamDesc in verySlowPams or isSlowPam(pamDesc):MAXSEQLEN}
+                        #print(SlowPamConds)
 
-                if exon_length < MAXSEQLEN3 and (pamDesc in verySlowPams) and i < 0.33*exonNumber:
-                    sel_exon = exon
-                elif exon_length < MAXSEQLEN2 and (isSlowPam(pamDesc)) and i < 0.33*exonNumber:
-                    sel_exon = exon
-                elif exon_length < MAXSEQLEN and i < 0.33*exonNumber:
-                    sel_exon = exon
-                #If none of exons in the first third of the conding sequence are of adequate length, get the sequence of the first exon up until MAXSEQLEN
-                #Is this preferable compared to selecting whole exons ?
-                elif (pamDesc in verySlowPams) and i > 0.33*exonNumber:
-                    sel_exon = exons[0][0:MAXSEQLEN3]
-                elif (isSlowPam(pamDesc)) and i > 0.33*exonNumber:
-                    sel_exon = exons[0][0:MAXSEQLEN2]
-                elif i > 0.33*exonNumber:
-                    sel_exon = exons[0][0:MAXSEQLEN]
-                
-            if sel_exon: #Is it necessary ?
-                exon_seq = getSeq(params["org"], sel_exon) 
-                return exon_seq
-            else:
-                pass
+                        if IsIn or (nb == 0 and not IsIn):
+                            if (pamDesc in verySlowPams):
+                                if exonLen < MAXSEQLEN3:
+                                    if not IsIn:
+                                        selExons[nb] = getSeq(params["org"], posStrTrunc + str(start + third))
+                                    else:
+                                        selExons[nb] = getSeq(params["org"], posStr)
+                                else:
+                                    selExons[nb] = getSeq(params["org"], posStrTrunc + str(start+MAXSEQLEN3))
+                            elif (isSlowPam(pamDesc)):
+                                if exonLen < MAXSEQLEN2:
+                                    if not IsIn:
+                                        selExons[nb] = getSeq(params["org"], posStrTrunc + str(start + third))
+                                    else:
+                                        selExons[nb] = getSeq(params["org"], posStr)
+                                else:
+                                    selExons[nb] = getSeq(params["org"], posStrTrunc + str(start+MAXSEQLEN2))
+                            elif exonLen < MAXSEQLEN:
+                                if not IsIn:
+                                    selExons[nb] = getSeq(params["org"], posStrTrunc + str(start + third))
+                                else:
+                                    selExons[nb] = getSeq(params["org"], posStr)
+                            else:
+                                selExons[nb] = getSeq(params["org"], posStrTrunc + str(start+MAXSEQLEN))
+                        else:
+                            pass
+                else:
+                    pass
+                if selExons:
+                    transcriptExonSeqs.append(selExons)
+            if transcriptExonSeqs:
+                fileExonSeqs.append(transcriptExonSeqs)
+        if fileExonSeqs:
+            return fileExonSeqs
+            
         else:
             raise ValueError("gene_err")
-
     else:
         raise ValueError("genome_err")
-        
-
-    #load all possible transcripts in real time using AJAX with select2 (load url)
-
-    #example (from https://select2.org/data-sources/ajax)
-
-    """
-    html
-    <select class="js-data-example-ajax"></select>
-
-    JS
-    $('.js-data-example-ajax').select2({
-    ajax: {
-    url: 'https://api.github.com/search/repositories',
-    dataType: 'json'
-    // Additional AJAX parameters go here; see the end of this chapter for the full code of this example
-    }
-    });
-    
-    """
-
-
-    #alternative in bash ? 
-    #cmd = "awk id=$geneID '$4 ~ id' $ %(segFname)s %locals" ()
-    #run twoBitToFa 
-    #cmd = "bedtools getfasta -fi %(genome_file)s -bed %(segFname)s" %locals()
-
 
 def iterParseBoulder(tmpOutFname):
     " parse a boulder IO style file, as output by Primer3 "
@@ -7688,7 +7710,7 @@ def getFlankSeq(genome, chrom, start, end, doRepeatMask=True):
     chromSizes = parseChromSizes(genome)
 
     if flankStart < 0 or flankEnd > chromSizes[chrom]:
-        errAbort("Not enough space on genome sequence to design primer. Need at least 1kbp on each side of the input sequence to design primers. Please design primers manually, choose a more recent genome assembly with longer contig sequences or paste a shorter input sequence (e.g. just the guide sequence alone with the PAM). Still questions? Email %s" % contactEmail)
+        errAbort("Not enough space on genome sequence to design primer. Need at least 1kbp on each side of the input sequence to design primers. Please design primers manually, choose a more recent genome assembly with longer contig sequences or paste a shorter input sequence (e.g. just the guide sequence alone with the PAM). Still questions? Email %s") % contactEmail
 
     # get 1kbp of flanking sequence
     flankSeq = getGenomeSeqsBin(
